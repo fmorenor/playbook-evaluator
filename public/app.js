@@ -214,38 +214,23 @@ newEvalBtn.addEventListener('click', () => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
-/* ── Export PDF ── */
-exportBtn.addEventListener('click', async () => {
+/* ── Export PDF — generado en el navegador (sin Puppeteer) ── */
+exportBtn.addEventListener('click', () => {
   if (!lastResult) return;
-  exportBtn.textContent = '⏳ Generando PDF...';
-  exportBtn.disabled = true;
 
-  try {
-    const html = buildReportHTML(lastResult);
-    const res = await fetch('/api/export-pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        html,
-        filename: `reporte-${lastResult.playbook_title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.pdf`
-      })
-    });
+  const html = buildReportHTML(lastResult);
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
 
-    if (!res.ok) throw new Error('Error al generar PDF');
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `reporte-playbook-${Date.now()}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    showError('No se pudo generar el PDF: ' + err.message);
-  } finally {
-    exportBtn.innerHTML = '⬇ Descargar Reporte PDF';
-    exportBtn.disabled = false;
-  }
+  // Esperar a que cargue y lanzar print
+  win.onload = () => {
+    setTimeout(() => {
+      win.print();
+      // Cerrar ventana después de imprimir/cancelar
+      win.onafterprint = () => win.close();
+    }, 400);
+  };
 });
 
 /* ── Build Report HTML for PDF ── */
@@ -287,6 +272,12 @@ function buildReportHTML(data) {
     .footer { text-align:center; font-size:11px; color:#8A9BBD; padding:16px; border-top:1px solid #EEF2F7; margin-top:24px; }
     .grid { display:grid; grid-template-columns:1fr; gap:8px; }
     * { word-break:break-word; }
+    @media print {
+      body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .no-print { display: none !important; }
+      .card { page-break-inside: avoid; }
+    }
+    @page { margin: 15mm; size: A4; }
   </style></head><body>
   <div class="header">
     <div>
