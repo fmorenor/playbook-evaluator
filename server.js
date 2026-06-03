@@ -1,0 +1,314 @@
+require('dotenv').config();
+const express = require('express');
+const multer = require('multer');
+const mammoth = require('mammoth');
+const pdfParse = require('pdf-parse');
+const Anthropic = require('@anthropic-ai/sdk');
+const path = require('path');
+const fs = require('fs');
+const puppeteer = require('puppeteer');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// ── Persistencia de logs ──────────────────────────────────────
+const LOGS_FILE = path.join(__dirname, 'evaluations.json');
+function readLogs() {
+  try { return JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8')); } catch { return []; }
+}
+function saveLog(entry) {
+  const logs = readLogs();
+  logs.unshift(entry); // más reciente primero
+  fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2));
+}
+
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.pdf', '.docx'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error('Solo se permiten archivos PDF o DOCX'));
+  }
+});
+
+app.use(express.static('public'));
+app.use(express.json());
+
+// softFail: true → si está AUSENTE se trata como PARCIAL (amarillo, 0.5 pts)
+// softFail: false → penalización completa (rojo, 0 pts)
+const CRITERIA = [
+  { id: 1,  name: 'Misión con técnica de 5 Porqués',          key: 'five_whys',         norm: 'Toyota Production System (TPS) · Lean Manufacturing',  softFail: true  },
+  { id: 2,  name: 'Objetivos OKR con Key Results medibles',    key: 'okr_measurable',    norm: 'OKR Framework (John Doerr / Google) · CartoData',        softFail: false },
+  { id: 3,  name: 'Conexión a OKR o Visión CartoData 2035',    key: 'vision_connection', norm: 'OKR Framework · CartoData Visión 2035',                  softFail: false },
+  { id: 4,  name: 'RACI con solo un A por tarea',              key: 'raci_single_a',     norm: 'PMBOK Guide (PMI) · Matriz RACI',                        softFail: false },
+  { id: 5,  name: 'Verificador QC en la RACI',                 key: 'raci_qc',           norm: 'ISO 9001:2015 §8.1 · PMBOK Guide',                       softFail: true  },
+  { id: 6,  name: 'DRI por paso del proceso',                  key: 'dri_per_step',      norm: 'ISO 9001:2015 §5.3 · Apple DRI Model',                   softFail: false },
+  { id: 7,  name: 'Paso QC numerado y explícito',              key: 'qc_step',           norm: 'ISO 9001:2015 §8.6 · ISO 10013:2021',                    softFail: true  },
+  { id: 8,  name: 'Sección V - Umbrales cuantificados',        key: 'thresholds',        norm: 'ISO 9001:2015 §8.6 · Six Sigma (DMAIC)',                 softFail: false },
+  { id: 9,  name: 'Protocolos de comunicación con tiempos',    key: 'comm_protocols',    norm: 'ITIL v4 · ISO 9001:2015 §7.4',                           softFail: false },
+  { id: 10, name: 'Ruta de escalada 3 niveles',                key: 'escalation',        norm: 'ITIL v4 · ISO 9001:2015 §10.2',                          softFail: false },
+  { id: 11, name: 'Recursos relacionados',                     key: 'resources',         norm: 'ISO 10013:2021 §6.5',                                    softFail: false },
+  { id: 12, name: 'Fecha revisión y control versiones',        key: 'version_control',   norm: 'ISO 9001:2015 §7.5 · ISO 10013:2021 §6.2',               softFail: false }
+];
+
+const SYSTEM_PROMPT = `Eres un auditor experto en estándares de Playbooks para CartoData.
+Tu tarea es evaluar documentos de Playbook contra el estándar PB-META-001.
+
+Para cada criterio, determina si está PRESENTE (cumple), PARCIAL (cumple parcialmente) o AUSENTE (no cumple).
+Sé específico en las sugerencias, indicando qué exactamente falta o cómo mejorar.
+
+DEFINICIÓN EXACTA DE CADA CRITERIO — úsala para evaluar con precisión:
+
+1. five_whys — Misión con técnica de 5 Porqués:
+   PRESENTE: La sección de Misión incluye una cadena de al menos 3 preguntas "¿Por qué?" encadenadas que llegan a una causa raíz o valor de negocio. Puede llamarse "Porqués", "¿Por qué?", "Justificación causal" o similar.
+   PARCIAL: Hay misión/propósito pero solo menciona la técnica sin aplicarla, o tiene 1-2 porqués sin llegar a causa raíz.
+   AUSENTE: Solo hay descripción del proceso sin ningún razonamiento causal encadenado.
+
+2. okr_measurable — Objetivos OKR con Key Results medibles:
+   PRESENTE: Hay objetivos con al menos un Key Result que incluye número, porcentaje o fecha concreta. Puede llamarse "Key Results", "KR", "Resultados clave", "Métricas" o similar.
+   PARCIAL: Hay objetivos pero los KR son cualitativos o sin fecha/métrica numérica.
+   AUSENTE: Solo objetivos sin KR, o sin sección de objetivos.
+
+3. vision_connection — Conexión a OKR o Visión CartoData 2035:
+   PRESENTE: El documento menciona explícitamente su alineación con algún OKR del área/empresa o con la Visión CartoData 2035 (o visión estratégica de largo plazo).
+   PARCIAL: Hay mención vaga de "alineación estratégica" sin OKR o visión específica.
+   AUSENTE: No hay ninguna referencia a objetivos organizacionales superiores.
+
+4. raci_single_a — RACI con solo un A por tarea:
+   PRESENTE: Existe una matriz RACI (o tabla de responsabilidades) donde cada tarea/fila tiene exactamente un "A" (Accountable/Responsable final). La tabla puede llamarse RACI, matriz de roles, tabla de responsabilidades, etc.
+   PARCIAL: Hay RACI pero alguna tarea tiene doble A o ningún A, o la matriz está incompleta.
+   AUSENTE: No hay ninguna matriz de roles o responsabilidades.
+
+5. raci_qc — Verificador QC en la RACI:
+   PRESENTE: La matriz RACI incluye una fila o columna dedicada a Control de Calidad, revisión, verificación o QC con asignación R o A. También aplica si hay un paso de revisión con responsable en la RACI.
+   PARCIAL: Se menciona QC o revisión en el texto pero no está integrado como tarea en la RACI.
+   AUSENTE: No hay ninguna tarea o rol de QC/verificación en la RACI.
+
+6. dri_per_step — DRI por paso del proceso:
+   PRESENTE: Cada paso numerado del proceso/SOP indica quién es el responsable (puede llamarse DRI, Dueño, Responsable, Owner, Ejecutor, Líder). No necesita la palabra "DRI" exacta.
+   PARCIAL: Algunos pasos tienen responsable pero no todos, o solo hay un responsable general del proceso.
+   AUSENTE: Los pasos no tienen responsables asignados.
+
+7. qc_step — Paso QC numerado y explícito:
+   PRESENTE: Existe un paso numerado dedicado a verificación, revisión, control de calidad o aprobación dentro del flujo del proceso. Puede llamarse "Revisión y Aprobación", "Control de Calidad", "Verificación", "QC", "Paso de revisión", etc.
+   PARCIAL: Se menciona revisión pero no como paso numerado independiente, o está en un anexo.
+   AUSENTE: No hay ningún paso de verificación en el flujo del proceso.
+
+8. thresholds — Sección V - Umbrales cuantificados:
+   PRESENTE: Existe una sección con criterios numéricos de aceptación/rechazo. Puede incluir porcentajes, tiempos, cantidades, semáforos (verde/amarillo/rojo) con valores numéricos o rangos. Puede llamarse "Umbrales", "Umbrales y Líneas Rojas", "Líneas Rojas", "Criterios de aceptación", "Estándares de calidad", "SLA", "Métricas", "KPIs", "Matriz de prioridad", "Indicadores", "Niveles de servicio", etc. Una tabla con columnas Verde/Amarillo/Rojo y valores numéricos cuenta como PRESENTE.
+   PARCIAL: Hay criterios de calidad mencionados pero sin números específicos, o solo cualitativos.
+   AUSENTE: No hay criterios de aceptación medibles.
+
+9. comm_protocols — Protocolos de comunicación con tiempos:
+   PRESENTE: El documento define canales de comunicación (Slack, email, reuniones, etc.) con tiempos de respuesta esperados (horas, días). Puede estar en cualquier sección.
+   PARCIAL: Menciona canales pero sin tiempos de respuesta, o tiempos pero sin canales específicos.
+   AUSENTE: No hay protocolos de comunicación definidos.
+
+10. escalation — Ruta de escalada 3 niveles:
+    PRESENTE: El documento tiene una ruta de escalada con al menos 3 niveles o pasos diferenciados para resolver problemas. Los niveles pueden llamarse "Nivel 1/2/3", "Paso 1/2/3", "Fase 1/2/3", o cualquier nomenclatura que describa quién resuelve primero, quién interviene después y quién es la última instancia. No se requiere la palabra "nivel" — "paso" también cuenta.
+    PARCIAL: Hay escalada mencionada pero con menos de 3 niveles/pasos, o sin descripción de cuándo activar cada uno.
+    AUSENTE: No hay ninguna ruta de escalada documentada.
+
+11. resources — Recursos relacionados:
+    PRESENTE: Hay una sección con referencias a otros documentos, herramientas, links, templates, videos, sistemas o materiales de apoyo. Puede llamarse "Recursos", "Referencias", "Materiales", "Herramientas", "Anexos", "Fuentes", etc. Con al menos 2 recursos.
+    PARCIAL: Se mencionan recursos pero como placeholders genéricos ("ver manual") o solo 1 recurso.
+    AUSENTE: No hay sección de recursos o referencias externas.
+
+12. version_control — Fecha revisión y control versiones:
+    PRESENTE: El documento incluye número de versión (v1.0, versión 2, etc.) Y al menos una fecha (creación, revisión o próxima revisión). Puede estar en el encabezado, pie de página o tabla de control.
+    PARCIAL: Solo hay versión sin fechas, o solo fecha sin versión.
+    AUSENTE: No hay ningún control de versiones ni fechas.
+
+Responde ÚNICAMENTE con un JSON válido con esta estructura exacta:
+{
+  "criteria": {
+    "five_whys": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "texto de evidencia encontrada", "suggestion": "sugerencia específica si aplica" },
+    "okr_measurable": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "vision_connection": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "raci_single_a": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "raci_qc": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "dri_per_step": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "qc_step": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "thresholds": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "comm_protocols": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "escalation": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "resources": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "version_control": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." }
+  },
+  "summary": "Resumen ejecutivo del playbook evaluado en 2-3 oraciones",
+  "playbook_title": "Título o nombre del playbook identificado"
+}`;
+
+async function extractText(buffer, mimetype, originalname) {
+  const ext = path.extname(originalname).toLowerCase();
+  if (ext === '.docx') {
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value;
+  } else if (ext === '.pdf') {
+    const data = await pdfParse(buffer);
+    return data.text;
+  }
+  throw new Error('Formato no soportado');
+}
+
+function calculateScore(criteriaResult) {
+  let score = 0;
+  for (const c of CRITERIA) {
+    const status = criteriaResult[c.key]?.status || 'AUSENTE';
+    if (status === 'PRESENTE') score += 1;
+    else if (status === 'PARCIAL') score += 0.5;
+    else if (status === 'AUSENTE' && c.softFail) score += 0.5; // softFail: cuenta como PARCIAL
+  }
+  return Math.round((score / 12) * 100);
+}
+
+// Aplica softFail: si el criterio es softFail y está AUSENTE, lo muestra como PARCIAL
+function applysoftFail(criteriaResult) {
+  const adjusted = {};
+  for (const c of CRITERIA) {
+    const original = criteriaResult[c.key] || { status: 'AUSENTE', evidence: '', suggestion: '' };
+    if (c.softFail && original.status === 'AUSENTE') {
+      adjusted[c.key] = {
+        ...original,
+        status: 'PARCIAL',
+        suggestion: (original.suggestion || '') + ' (Criterio flexible — mejora recomendada pero no bloqueante.)'
+      };
+    } else {
+      adjusted[c.key] = original;
+    }
+  }
+  return adjusted;
+}
+
+function getVerdict(score) {
+  if (score >= 85) return 'APROBADO';
+  if (score >= 60) return 'REVISAR';
+  return 'RECHAZADO';
+}
+
+app.post('/api/evaluate', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
+
+    const text = await extractText(req.file.buffer, req.file.mimetype, req.file.originalname);
+
+    if (!text || text.trim().length < 100) {
+      return res.status(400).json({ error: 'El documento está vacío o no se pudo extraer texto' });
+    }
+
+    const truncatedText = text.slice(0, 40000);
+
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: `Evalúa el siguiente Playbook contra el estándar PB-META-001:\n\n${truncatedText}`
+        }
+      ]
+    });
+
+    const rawContent = message.content[0].text;
+    console.log('--- Respuesta Claude ---\n', rawContent.slice(0, 500), '\n---');
+
+    let parsed;
+    try {
+      // Intento 1: parsear directo
+      parsed = JSON.parse(rawContent);
+    } catch {
+      try {
+        // Intento 2: extraer el bloque JSON más externo con balance de llaves
+        let start = rawContent.indexOf('{');
+        if (start === -1) throw new Error('No se encontró JSON en la respuesta');
+        let depth = 0, end = -1;
+        for (let i = start; i < rawContent.length; i++) {
+          if (rawContent[i] === '{') depth++;
+          else if (rawContent[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end === -1) throw new Error('JSON incompleto en la respuesta');
+        parsed = JSON.parse(rawContent.slice(start, end + 1));
+      } catch (parseErr) {
+        console.error('Parse error:', parseErr.message);
+        console.error('Raw completo:', rawContent);
+        return res.status(500).json({ error: 'Error al parsear respuesta de IA: ' + parseErr.message, raw: rawContent.slice(0, 1000) });
+      }
+    }
+
+    const adjustedCriteria = applysoftFail(parsed.criteria);
+    const score = calculateScore(adjustedCriteria);
+    const verdict = getVerdict(score);
+
+    const response = {
+      filename: req.file.originalname,
+      playbook_title: parsed.playbook_title || req.file.originalname,
+      score,
+      verdict,
+      summary: parsed.summary,
+      criteria: CRITERIA.map(c => ({
+        ...c,
+        ...adjustedCriteria[c.key],
+        status: adjustedCriteria[c.key]?.status || 'AUSENTE'
+      })),
+      evaluated_at: new Date().toISOString()
+    };
+
+    // Guardar en log
+    saveLog({
+      id: Date.now(),
+      filename: response.filename,
+      playbook_title: response.playbook_title,
+      score: response.score,
+      verdict: response.verdict,
+      evaluated_at: response.evaluated_at,
+      criteria_summary: {
+        presente: response.criteria.filter(c => c.status === 'PRESENTE').length,
+        parcial:  response.criteria.filter(c => c.status === 'PARCIAL').length,
+        ausente:  response.criteria.filter(c => c.status === 'AUSENTE').length,
+      }
+    });
+
+    res.json(response);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── API de logs ───────────────────────────────────────────────
+app.get('/api/logs', (req, res) => res.json(readLogs()));
+
+app.delete('/api/logs/:id', (req, res) => {
+  const logs = readLogs().filter(l => String(l.id) !== req.params.id);
+  fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2));
+  res.json({ ok: true });
+});
+
+app.post('/api/export-pdf', async (req, res) => {
+  try {
+    const { html, filename } = req.body;
+    if (!html) return res.status(400).json({ error: 'No HTML provided' });
+
+    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdf = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' } });
+    await browser.close();
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename || 'reporte-playbook.pdf'}"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Evaluador de Playbooks CartoData corriendo en http://localhost:${PORT}`);
+});

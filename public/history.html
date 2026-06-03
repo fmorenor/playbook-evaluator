@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Historial de Evaluaciones — CartoData</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .page-title { font-size: 20px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+    .page-sub   { font-size: 14px; color: var(--gray-400); margin-bottom: 24px; }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--white);
+      border: 1px solid var(--gray-200);
+      border-radius: 10px;
+      padding: 18px 20px;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+    .stat-number { font-size: 32px; font-weight: 800; color: var(--navy); line-height: 1; }
+    .stat-label  { font-size: 12px; color: var(--gray-400); margin-top: 4px; }
+
+    .log-table { width: 100%; border-collapse: collapse; }
+    .log-table th {
+      background: var(--navy);
+      color: var(--white);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .4px;
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .log-table th:first-child { border-radius: 8px 0 0 0; }
+    .log-table th:last-child  { border-radius: 0 8px 0 0; text-align: center; }
+    .log-table td {
+      padding: 12px 14px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--gray-100);
+      vertical-align: middle;
+      color: var(--navy);
+    }
+    .log-table tr:last-child td { border-bottom: none; }
+    .log-table tr:hover td { background: var(--gray-50); }
+    .log-table tr:nth-child(even) td { background: #FAFBFD; }
+    .log-table tr:nth-child(even):hover td { background: var(--gray-50); }
+
+    .score-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 800;
+      font-size: 15px;
+      min-width: 56px;
+    }
+
+    .verdict-chip {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .6px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      display: inline-block;
+    }
+    .chip-APROBADO  { background: #F0FDF4; color: #16a34a; border: 1px solid #86efac; }
+    .chip-REVISAR   { background: #FFFBEB; color: #b45309; border: 1px solid #fcd34d; }
+    .chip-RECHAZADO { background: #FEF2F2; color: #dc2626; border: 1px solid #fca5a5; }
+
+    .criteria-mini {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      font-size: 12px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot-green  { background: #22C55E; }
+    .dot-yellow { background: #F59E0B; }
+    .dot-red    { background: #EF4444; }
+
+    .btn-delete {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--gray-400);
+      font-size: 16px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: all .15s;
+      display: block;
+      margin: 0 auto;
+    }
+    .btn-delete:hover { background: #FEF2F2; color: #dc2626; }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--gray-400);
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state p { font-size: 15px; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .search-input {
+      padding: 8px 14px;
+      border: 1.5px solid var(--gray-200);
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+      width: 260px;
+      transition: border-color .2s;
+    }
+    .search-input:focus { border-color: var(--blue); }
+
+    .filter-btns { display: flex; gap: 6px; }
+    .filter-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1.5px solid var(--gray-200);
+      background: var(--white);
+      cursor: pointer;
+      transition: all .15s;
+      color: var(--gray-600);
+    }
+    .filter-btn.active, .filter-btn:hover { border-color: var(--blue); color: var(--blue); background: var(--gray-50); }
+    .filter-btn.active { background: var(--blue); color: var(--white); border-color: var(--blue); }
+
+    .filename-cell { max-width: 220px; }
+    .filename-main { font-weight: 600; color: var(--navy); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .filename-sub  { font-size: 11px; color: var(--gray-400); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    @media (max-width: 640px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .search-input { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo-area">
+        <img src="logo-cartodata.avif" alt="CartoData" style="height:40px;width:auto;" />
+      </div>
+      <div class="header-title">
+        <h1>Historial de Evaluaciones</h1>
+        <span class="standard-badge">PB-META-001</span>
+      </div>
+      <nav style="margin-left:auto;">
+        <a href="/" class="btn btn-outline" style="font-size:13px;padding:7px 16px;color:rgba(255,255,255,.8);border-color:rgba(255,255,255,.2);">
+          ← Evaluar Playbook
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Stats -->
+    <div class="stats-row" id="stats-row">
+      <div class="stat-card">
+        <div class="stat-number" id="stat-total">—</div>
+        <div class="stat-label">Evaluaciones totales</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-avg" style="color:var(--blue)">—</div>
+        <div class="stat-label">Puntaje promedio</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-aprobados" style="color:#16a34a">—</div>
+        <div class="stat-label">Aprobados</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-rechazados" style="color:#dc2626">—</div>
+        <div class="stat-label">Rechazados</div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card" style="padding:24px;">
+      <div class="toolbar">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input type="text" class="search-input" id="search-input" placeholder="🔍 Buscar por nombre..." />
+          <div class="filter-btns">
+            <button class="filter-btn active" data-filter="TODOS">Todos</button>
+            <button class="filter-btn" data-filter="APROBADO">✅ Aprobado</button>
+            <button class="filter-btn" data-filter="REVISAR">🟡 Revisar</button>
+            <button class="filter-btn" data-filter="RECHAZADO">🔴 Rechazado</button>
+          </div>
+        </div>
+        <button class="btn btn-outline" id="clear-all-btn" style="font-size:12px;padding:6px 14px;color:#dc2626;border-color:#fca5a5;">
+          🗑 Limpiar historial
+        </button>
+      </div>
+
+      <div id="table-container"></div>
+    </div>
+
+  </main>
+
+  <footer>
+    <p>CartoData · Estándar de Calidad PB-META-001 · Evaluación automatizada con IA</p>
+  </footer>
+
+  <script>
+    let allLogs = [];
+    let currentFilter = 'TODOS';
+
+    async function loadLogs() {
+      const res = await fetch('/api/logs');
+      allLogs = await res.json();
+      renderStats();
+      renderTable();
+    }
+
+    function renderStats() {
+      document.getElementById('stat-total').textContent = allLogs.length;
+      if (allLogs.length === 0) {
+        document.getElementById('stat-avg').textContent = '—';
+        document.getElementById('stat-aprobados').textContent = '—';
+        document.getElementById('stat-rechazados').textContent = '—';
+        return;
+      }
+      const avg = Math.round(allLogs.reduce((s, l) => s + l.score, 0) / allLogs.length);
+      document.getElementById('stat-avg').textContent = avg + '%';
+      document.getElementById('stat-aprobados').textContent = allLogs.filter(l => l.verdict === 'APROBADO').length;
+      document.getElementById('stat-rechazados').textContent = allLogs.filter(l => l.verdict === 'RECHAZADO').length;
+    }
+
+    function renderTable() {
+      const search = document.getElementById('search-input').value.toLowerCase();
+      const filtered = allLogs.filter(l => {
+        const matchVerdict = currentFilter === 'TODOS' || l.verdict === currentFilter;
+        const matchSearch  = !search || l.playbook_title.toLowerCase().includes(search) || l.filename.toLowerCase().includes(search);
+        return matchVerdict && matchSearch;
+      });
+
+      const container = document.getElementById('table-container');
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">📋</div>
+            <p>${allLogs.length === 0 ? 'Aún no hay evaluaciones registradas.' : 'No hay resultados para este filtro.'}</p>
+          </div>`;
+        return;
+      }
+
+      const rows = filtered.map(l => {
+        const date = new Date(l.evaluated_at).toLocaleString('es-MX', {
+          day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+        const scoreColor = l.score >= 85 ? '#16a34a' : l.score >= 60 ? '#b45309' : '#dc2626';
+        const cs = l.criteria_summary || {};
+        return `
+          <tr>
+            <td class="filename-cell">
+              <div class="filename-main" title="${l.playbook_title}">${l.playbook_title}</div>
+              <div class="filename-sub" title="${l.filename}">${l.filename}</div>
+            </td>
+            <td>
+              <span class="score-pill" style="color:${scoreColor}">
+                ${l.score}<span style="font-size:11px;color:var(--gray-400)">%</span>
+              </span>
+            </td>
+            <td><span class="verdict-chip chip-${l.verdict}">${l.verdict}</span></td>
+            <td>
+              <div class="criteria-mini">
+                <span class="dot dot-green"></span>${cs.presente ?? '—'}
+                <span class="dot dot-yellow" style="margin-left:4px"></span>${cs.parcial ?? '—'}
+                <span class="dot dot-red" style="margin-left:4px"></span>${cs.ausente ?? '—'}
+              </div>
+            </td>
+            <td style="color:var(--gray-400);font-size:12px;white-space:nowrap">${date}</td>
+            <td>
+              <button class="btn-delete" onclick="deleteLog(${l.id})" title="Eliminar">🗑</button>
+            </td>
+          </tr>`;
+      }).join('');
+
+      container.innerHTML = `
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Puntaje</th>
+              <th>Veredicto</th>
+              <th>Criterios ✅ 🟡 🔴</th>
+              <th>Fecha</th>
+              <th style="text-align:center">—</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    async function deleteLog(id) {
+      if (!confirm('¿Eliminar este registro?')) return;
+      await fetch(`/api/logs/${id}`, { method: 'DELETE' });
+      allLogs = allLogs.filter(l => l.id !== id);
+      renderStats();
+      renderTable();
+    }
+
+    document.getElementById('clear-all-btn').addEventListener('click', async () => {
+      if (!confirm('¿Limpiar todo el historial? Esta acción no se puede deshacer.')) return;
+      for (const l of allLogs) await fetch(`/api/logs/${l.id}`, { method: 'DELETE' });
+      allLogs = [];
+      renderStats();
+      renderTable();
+    });
+
+    document.getElementById('search-input').addEventListener('input', renderTable);
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.filter;
+        renderTable();
+      });
+    });
+
+    loadLogs();
+  </script>
+</body>
+</html>

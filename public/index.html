@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Evaluador de Playbooks — CartoData</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo-area">
+        <img src="logo-cartodata.avif" alt="CartoData" style="height:40px;width:auto;" />
+      </div>
+      <div class="header-title">
+        <h1>Evaluador de Playbooks</h1>
+        <span class="standard-badge">PB-META-001</span>
+      </div>
+      <nav style="margin-left:auto;">
+        <a href="/history.html" class="btn btn-outline" style="font-size:13px;padding:7px 16px;color:rgba(255,255,255,.8);border-color:rgba(255,255,255,.2);">
+          📋 Historial
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- Upload Section -->
+    <section id="upload-section" class="card">
+      <h2>Subir Playbook</h2>
+      <p class="subtitle">Soporta archivos <strong>PDF</strong> y <strong>DOCX</strong> — máx. 20 MB</p>
+
+      <div id="drop-zone" class="drop-zone">
+        <div class="drop-icon">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <path d="M24 4 L24 32" stroke="#4A7EC0" stroke-width="3" stroke-linecap="round"/>
+            <path d="M14 22 L24 32 L34 22" stroke="#4A7EC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M8 36 L8 42 L40 42 L40 36" stroke="#4A7EC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <p>Arrastra tu archivo aquí o</p>
+        <label for="file-input" class="btn btn-primary">Seleccionar archivo</label>
+        <input type="file" id="file-input" accept=".pdf,.docx" hidden />
+        <p id="file-name" class="file-name"></p>
+      </div>
+
+      <button id="evaluate-btn" class="btn btn-evaluate" disabled>
+        <span class="btn-icon">▶</span> Evaluar Playbook
+      </button>
+    </section>
+
+    <!-- Loading -->
+    <section id="loading-section" class="card hidden">
+      <div class="loading-content">
+        <div class="spinner"></div>
+        <h3>Analizando playbook...</h3>
+        <p>Claude está evaluando los 12 criterios del estándar PB-META-001</p>
+        <div class="progress-steps">
+          <span class="step active">Extrayendo texto</span>
+          <span class="step-arrow">→</span>
+          <span class="step" id="step-analyze">Analizando criterios</span>
+          <span class="step-arrow">→</span>
+          <span class="step" id="step-report">Generando reporte</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results Section -->
+    <section id="results-section" class="hidden">
+
+      <!-- Score Card -->
+      <div class="score-card card" id="score-card">
+        <div class="score-left">
+          <div class="score-circle" id="score-circle">
+            <svg viewBox="0 0 120 120" class="score-svg">
+              <circle cx="60" cy="60" r="52" class="score-bg-ring"/>
+              <circle cx="60" cy="60" r="52" class="score-ring" id="score-ring"
+                stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
+            </svg>
+            <div class="score-text">
+              <span class="score-number" id="score-number">0</span>
+              <span class="score-pct">%</span>
+            </div>
+          </div>
+        </div>
+        <div class="score-right">
+          <div class="verdict-badge" id="verdict-badge">—</div>
+          <h2 id="playbook-title">Playbook</h2>
+          <p id="summary-text" class="summary"></p>
+          <div class="score-meta">
+            <span id="criteria-passed">0</span> / 12 criterios
+            &nbsp;·&nbsp;
+            <span id="evaluated-at"></span>
+          </div>
+          <div class="action-btns">
+            <button id="export-btn" class="btn btn-secondary">
+              ⬇ Descargar Reporte PDF
+            </button>
+            <button id="new-eval-btn" class="btn btn-outline">
+              ↩ Nueva Evaluación
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Criteria Grid -->
+      <div class="card">
+        <h3 class="section-title">Detalle por Criterio</h3>
+        <div id="criteria-grid" class="criteria-grid"></div>
+      </div>
+
+      <!-- Suggestions -->
+      <div class="card" id="suggestions-card">
+        <h3 class="section-title">Sugerencias de Mejora</h3>
+        <div id="suggestions-list" class="suggestions-list"></div>
+      </div>
+
+    </section>
+
+    <!-- Error -->
+    <div id="error-toast" class="error-toast hidden">
+      <span id="error-msg"></span>
+      <button onclick="hideError()">✕</button>
+    </div>
+  </main>
+
+  <footer>
+    <p>CartoData · Estándar de Calidad PB-META-001 · Evaluación automatizada con IA</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
