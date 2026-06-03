@@ -11,15 +11,35 @@ const puppeteer = require('puppeteer');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Persistencia de logs ──────────────────────────────────────
-const LOGS_FILE = path.join(__dirname, 'evaluations.json');
-function readLogs() {
-  try { return JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8')); } catch { return []; }
+// ── Persistencia de logs via GitHub Gist ─────────────────────
+const GIST_ID    = process.env.GIST_ID;
+const GIST_TOKEN = process.env.GITHUB_TOKEN;
+const GIST_FILE  = 'evaluations.json';
+
+async function readLogs() {
+  try {
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      headers: { Authorization: `Bearer ${GIST_TOKEN}`, 'User-Agent': 'playbook-evaluator' }
+    });
+    const data = await res.json();
+    return JSON.parse(data.files[GIST_FILE].content);
+  } catch { return []; }
 }
-function saveLog(entry) {
-  const logs = readLogs();
-  logs.unshift(entry); // más reciente primero
-  fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2));
+
+async function saveLog(entry) {
+  try {
+    const logs = await readLogs();
+    logs.unshift(entry);
+    await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${GIST_TOKEN}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'playbook-evaluator'
+      },
+      body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(logs, null, 2) } } })
+    });
+  } catch (e) { console.error('Error guardando log:', e.message); }
 }
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -281,11 +301,19 @@ app.post('/api/evaluate', upload.single('file'), async (req, res) => {
 });
 
 // ── API de logs ───────────────────────────────────────────────
-app.get('/api/logs', (req, res) => res.json(readLogs()));
+app.get('/api/logs', async (req, res) => res.json(await readLogs()));
 
-app.delete('/api/logs/:id', (req, res) => {
-  const logs = readLogs().filter(l => String(l.id) !== req.params.id);
-  fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2));
+app.delete('/api/logs/:id', async (req, res) => {
+  const logs = (await readLogs()).filter(l => String(l.id) !== req.params.id);
+  await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${GIST_TOKEN}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'playbook-evaluator'
+    },
+    body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(logs, null, 2) } } })
+  });
   res.json({ ok: true });
 });
 
