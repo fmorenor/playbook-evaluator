@@ -205,7 +205,7 @@ function applysoftFail(criteriaResult) {
 }
 
 function getVerdict(score) {
-  if (score >= 85) return 'APROBADO';
+  if (score >= 80) return 'APROBADO';
   if (score >= 60) return 'REVISAR';
   return 'RECHAZADO';
 }
