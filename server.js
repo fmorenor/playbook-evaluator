@@ -16,30 +16,46 @@ const GIST_ID    = process.env.GIST_ID;
 const GIST_TOKEN = process.env.GITHUB_TOKEN;
 const GIST_FILE  = 'evaluations.json';
 
+// Mutex para evitar escrituras simultáneas
+let gistLock = Promise.resolve();
+
+async function gistRequest(method, body) {
+  const opts = {
+    method,
+    headers: { Authorization: `Bearer ${GIST_TOKEN}`, 'Content-Type': 'application/json', 'User-Agent': 'playbook-evaluator' }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, opts);
+  return res.json();
+}
+
 async function readLogs() {
   try {
-    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-      headers: { Authorization: `Bearer ${GIST_TOKEN}`, 'User-Agent': 'playbook-evaluator' }
-    });
-    const data = await res.json();
+    const data = await gistRequest('GET');
     return JSON.parse(data.files[GIST_FILE].content);
   } catch { return []; }
 }
 
 async function saveLog(entry) {
-  try {
-    const logs = await readLogs();
-    logs.unshift(entry);
-    await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${GIST_TOKEN}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'playbook-evaluator'
-      },
-      body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(logs, null, 2) } } })
-    });
-  } catch (e) { console.error('Error guardando log:', e.message); }
+  // Encadenar en el mutex para evitar condición de carrera
+  gistLock = gistLock.then(async () => {
+    try {
+      const logs = await readLogs();
+      logs.unshift(entry);
+      await gistRequest('PATCH', { files: { [GIST_FILE]: { content: JSON.stringify(logs, null, 2) } } });
+      console.log(`Log guardado: ${entry.playbook_title} — ${entry.score}%`);
+    } catch (e) { console.error('Error guardando log:', e.message); }
+  });
+  return gistLock;
+}
+
+async function writeLogs(logs) {
+  gistLock = gistLock.then(async () => {
+    try {
+      await gistRequest('PATCH', { files: { [GIST_FILE]: { content: JSON.stringify(logs, null, 2) } } });
+    } catch (e) { console.error('Error escribiendo logs:', e.message); }
+  });
+  return gistLock;
 }
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -305,15 +321,7 @@ app.get('/api/logs', async (req, res) => res.json(await readLogs()));
 
 app.delete('/api/logs/:id', async (req, res) => {
   const logs = (await readLogs()).filter(l => String(l.id) !== req.params.id);
-  await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${GIST_TOKEN}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'playbook-evaluator'
-    },
-    body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(logs, null, 2) } } })
-  });
+  await writeLogs(logs);
   res.json({ ok: true });
 });
 
