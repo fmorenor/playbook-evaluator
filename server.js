@@ -162,19 +162,22 @@ DEFINICIÓN EXACTA DE CADA CRITERIO — úsala para evaluar con precisión:
     AUSENTE: No hay ninguna ruta de escalada documentada.
 
 11. resources — Recursos relacionados:
-    Evalúa en tres niveles de calidad:
-    PRESENTE (completo): La sección tiene al menos 2 recursos con URL/link activo (https://, http://, drive.google.com, notion.so, etc.) O rutas de directorio específicas (ej: "Google Drive > Operaciones > Formatos > PB-XYZ-000.docx", "SharePoint > Procesos > ..."). Tanto links como rutas de directorio son VÁLIDOS y cuentan como PRESENTE.
-    PARCIAL (incompleto): Alguno de estos casos:
-      - Solo se menciona el nombre del documento sin link ni ruta (ej: "Ver Formato Playbook" sin indicar dónde está) → mencionar en evidence qué recursos tienen solo nombre sin ruta/link
-      - Solo 1 recurso con link o ruta válida
-      - Mezcla: algunos con link/ruta y otros solo con nombre
-    AUSENTE: No hay sección de recursos, o todos son placeholders genéricos sin nombre específico.
+    CONTEXTO IMPORTANTE SOBRE LINKS EN DOCUMENTOS:
+    - Si el documento fue evaluado desde Google Docs (verás "[LINK: url]" en el texto), los hipervínculos son visibles y debes evaluarlos directamente.
+    - Si el documento fue subido como PDF o DOCX, los hipervínculos NO se preservan en la extracción de texto. En este caso, un nombre de documento específico y único PUEDE tener un link real en el original que no es visible aquí. Sé más tolerante en este caso.
 
-    En la evidence, clasificar explícitamente cada recurso encontrado como:
-    - [LINK] si tiene URL
-    - [RUTA] si tiene ruta de directorio/carpeta
-    - [SOLO NOMBRE] si solo aparece el nombre sin ubicación
-    En la suggestion, indicar qué recursos tienen solo nombre y sugerir agregar el link o ruta de acceso.
+    REGLAS DE CLASIFICACIÓN:
+    - [LINK]: el texto contiene una URL visible (https://, http://, drive.google.com, [LINK: ...], etc.)
+    - [RUTA]: el texto describe una ruta de carpeta/directorio (ej: "Google Drive > Folder > Archivo", "SharePoint > Procesos > ...")
+    - [NOMBRE ESPECÍFICO]: nombre propio de un documento concreto sin ruta ni link (ej: "PB-XYZ-000 Formato Playbook", "Inventario de Activos Lentes 3D"). En PDF/DOCX, ASUMIR que puede existir un link no visible.
+    - [GENÉRICO]: referencia vaga sin nombre específico (ej: "ver el manual", "consultar documentación")
+
+    CALIFICACIÓN:
+    PRESENTE: Al menos 2 recursos que sean [LINK], [RUTA] o [NOMBRE ESPECÍFICO]. Los [NOMBRE ESPECÍFICO] en documentos PDF/DOCX cuentan como válidos.
+    PARCIAL: Solo 1 recurso válido, o mezcla donde algunos son [GENÉRICO], o en Google Docs hay recursos con [SOLO NOMBRE] sin link cuando los demás sí tienen link.
+    AUSENTE: Solo referencias [GENÉRICO] o sin sección de recursos.
+
+    En la evidence, clasificar cada recurso con su etiqueta. En la suggestion, solo indicar mejora de agregar link/ruta si el documento vino de Google Docs y se confirmó que no tiene link, NO para PDFs/DOCX donde el link puede existir pero no ser visible.
 
 12. version_control — Fecha revisión y control versiones:
     PRESENTE: El documento incluye número de versión (v1.0, versión 2, etc.) Y al menos una fecha (creación, revisión o próxima revisión). Puede estar en el encabezado, pie de página o tabla de control.
@@ -223,16 +226,54 @@ async function extractTextFromGoogleDoc(url) {
   const docId = extractGoogleDocId(url);
   if (!docId) throw new Error('URL de Google Docs no válida. Asegúrate de que sea un enlace como: https://docs.google.com/document/d/ID/edit');
 
-  // Exportar como texto plano
-  const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+  // Exportar como HTML para preservar hipervínculos
+  const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=html`;
   const res = await fetch(exportUrl, { redirect: 'follow' });
 
   if (res.status === 403) throw new Error('El documento no es público. Cambia el acceso a "Cualquier persona con el enlace puede ver" en Google Docs.');
   if (res.status === 404) throw new Error('Documento no encontrado. Verifica que el enlace sea correcto.');
   if (!res.ok) throw new Error(`Error al acceder al documento: ${res.status}`);
 
-  const text = await res.text();
+  const html = await res.text();
+  // Convertir HTML a texto enriquecido preservando links visibles para Claude
+  const text = htmlToEnrichedText(html);
   if (!text || text.trim().length < 100) throw new Error('El documento está vacío o no se pudo extraer texto.');
+  return text;
+}
+
+// Convierte HTML a texto plano preservando hipervínculos como [LINK: texto → url]
+function htmlToEnrichedText(html) {
+  // Reemplazar <a href="url">texto</a> → "texto [LINK: url]"
+  let text = html.replace(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, content) => {
+    const linkText = content.replace(/<[^>]+>/g, '').trim();
+    // Filtrar links internos de Google (anclas, estilos, etc.)
+    if (href.startsWith('#') || href.includes('google.com/url?q=')) {
+      // Decodificar URL de redirección de Google
+      const match = href.match(/[?&]q=([^&]+)/);
+      const realUrl = match ? decodeURIComponent(match[1]) : href;
+      return realUrl.startsWith('#') ? linkText : `${linkText} [LINK: ${realUrl}]`;
+    }
+    return href.startsWith('http') ? `${linkText} [LINK: ${href}]` : linkText;
+  });
+
+  // Limpiar el resto de tags HTML
+  text = text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/td>/gi, '\t')
+    .replace(/<\/th>/gi, '\t')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
   return text;
 }
 
@@ -306,7 +347,7 @@ app.post('/api/evaluate', upload.single('file'), async (req, res) => {
       messages: [
         {
           role: 'user',
-          content: `Evalúa el siguiente Playbook contra el estándar PB-META-001:\n\n${truncatedText}`
+          content: `FUENTE: Archivo subido (PDF/DOCX) — los hipervínculos NO se preservan en la extracción de texto. Para el criterio 11, tratar nombres específicos de documentos como válidos aunque no tengan URL visible.\n\nEvalúa el siguiente Playbook contra el estándar PB-META-001:\n\n${truncatedText}`
         }
       ]
     });
@@ -393,7 +434,7 @@ app.post('/api/evaluate-url', async (req, res) => {
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: `Evalúa el siguiente Playbook contra el estándar PB-META-001:\n\n${truncatedText}` }]
+      messages: [{ role: 'user', content: `FUENTE: Google Docs (HTML exportado) — los hipervínculos SÍ están preservados como [LINK: url] en el texto. Para el criterio 11, evaluar los links visibles directamente y señalar cuáles recursos NO tienen link.\n\nEvalúa el siguiente Playbook contra el estándar PB-META-001:\n\n${truncatedText}` }]
     });
 
     const rawContent = message.content[0].text;
