@@ -358,6 +358,7 @@ app.post('/api/evaluate', upload.single('file'), async (req, res) => {
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
+      temperature: 0,
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -448,6 +449,7 @@ app.post('/api/evaluate-url', async (req, res) => {
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
+      temperature: 0,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `FUENTE: Google Docs (HTML exportado) — los hipervínculos SÍ están preservados como [LINK: url] en el texto. Para el criterio 11, evaluar los links visibles directamente y señalar cuáles recursos NO tienen link.\n\nEvalúa el siguiente Playbook contra el estándar PB-META-001:\n\n${truncatedText}` }]
     });
