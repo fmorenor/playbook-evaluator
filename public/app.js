@@ -135,9 +135,12 @@ function renderResults(data) {
   document.getElementById('playbook-title').textContent = data.playbook_title || data.filename;
   document.getElementById('summary-text').textContent   = data.summary || '';
 
-  const passed = data.criteria.filter(c => c.status === 'PRESENTE').length;
+  const passed  = data.criteria.filter(c => c.status === 'PRESENTE').length;
   const partial = data.criteria.filter(c => c.status === 'PARCIAL').length;
-  document.getElementById('criteria-passed').textContent = `${passed} completos, ${partial} parciales`;
+  const na      = data.criteria.filter(c => c.status === 'NO_APLICA').length;
+  const active  = 12 - na;
+  document.getElementById('criteria-passed').textContent =
+    `${passed} completos, ${partial} parciales${na > 0 ? `, ${na} no aplican` : ''} / ${active} activos`;
 
   const evalDate = new Date(data.evaluated_at);
   document.getElementById('evaluated-at').textContent = evalDate.toLocaleString('es-MX', {
@@ -158,8 +161,10 @@ function renderResults(data) {
           <div class="criterion-name">${c.name}</div>
           <div class="criterion-status-text status-${c.status}">${c.status}</div>
           ${c.norm ? `<div class="criterion-norm">📐 ${c.norm}</div>` : ''}
-          ${c.evidence ? `<div class="criterion-evidence">${c.evidence}</div>` : ''}
-          ${c.suggestion && c.status !== 'PRESENTE' ? `<div class="criterion-suggestion">💡 ${c.suggestion}</div>` : ''}
+          ${c.weight === 2 ? `<div class="criterion-norm" style="background:rgba(99,51,168,.12);color:#6333a8;">⚖️ Peso doble — criterio estratégico</div>` : ''}
+          ${c.status === 'NO_APLICA' ? `<div class="criterion-norm" style="background:#EDF2F7;color:#718096;">⊘ No aplica para este tipo de Playbook</div>` : ''}
+          ${c.evidence && c.status !== 'NO_APLICA' ? `<div class="criterion-evidence">${c.evidence}</div>` : ''}
+          ${c.suggestion && c.status !== 'PRESENTE' && c.status !== 'NO_APLICA' ? `<div class="criterion-suggestion">💡 ${c.suggestion}</div>` : ''}
         </div>
       </div>`;
     grid.appendChild(div);

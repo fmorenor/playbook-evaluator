@@ -110,9 +110,21 @@ DEFINICIÓN EXACTA DE CADA CRITERIO — úsala para evaluar con precisión:
    AUSENTE: Solo objetivos sin KR, o sin sección de objetivos.
 
 3. vision_connection — Conexión a OKR o Visión CartoData 2035:
-   PRESENTE: El documento menciona explícitamente su alineación con algún OKR del área/empresa o con la Visión CartoData 2035 (o visión estratégica de largo plazo).
+   ANTES DE EVALUAR, determina el tipo de Playbook leyendo su contenido:
+   - TIPO A — Activo físico / insumo / equipo operativo: el documento gestiona un objeto físico, equipo, herramienta, lente, sensor, vehículo, consumible u otro activo tangible. Ejemplos: manejo de lentes 3D, mantenimiento de drones, control de inventario de equipo.
+   - TIPO B — Proceso de área / entrega de servicio / proceso transversal: el documento gestiona cómo un equipo o área ejecuta su trabajo, entrega un servicio interno o externo, o estandariza un proceso repetible. Ejemplos: generación de Playbooks, procesamiento GNSS, clasificación catastral, atención a clientes.
+   - TIPO C — Estratégico / gobernanza: el documento define lineamientos, políticas, visión, estructura organizacional o metodología de alto nivel. Ejemplos: PB-META-001, plan estratégico, política de calidad.
+
+   Si TIPO A → status: "NO_APLICA", evidence: "Playbook de activo físico/equipo — criterio de conexión estratégica no aplica a este tipo de documento", suggestion: ""
+   Si TIPO B → evaluar normalmente: PRESENTE/PARCIAL/AUSENTE según conexión a OKR o Visión 2035, weight: 1
+   Si TIPO C → evaluar con peso doble: PRESENTE/PARCIAL/AUSENTE según conexión estratégica, weight: 2
+
+   Para TIPO B y C:
+   PRESENTE: El documento menciona explícitamente su alineación con algún OKR del área/empresa o con la Visión CartoData 2035.
    PARCIAL: Hay mención vaga de "alineación estratégica" sin OKR o visión específica.
    AUSENTE: No hay ninguna referencia a objetivos organizacionales superiores.
+
+   En el JSON de vision_connection incluir además: "playbook_type": "A|B|C", "weight": 0|1|2
 
 4. raci_single_a — RACI con solo un A por tarea:
    PRESENTE: Existe una matriz RACI (o tabla de responsabilidades) donde cada tarea/fila tiene exactamente un "A" (Accountable/Responsable final). La tabla puede llamarse RACI, matriz de roles, tabla de responsabilidades, etc.
@@ -164,7 +176,7 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura exacta:
   "criteria": {
     "five_whys": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "texto de evidencia encontrada", "suggestion": "sugerencia específica si aplica" },
     "okr_measurable": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
-    "vision_connection": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
+    "vision_connection": { "status": "PRESENTE|PARCIAL|AUSENTE|NO_APLICA", "evidence": "...", "suggestion": "...", "playbook_type": "A|B|C", "weight": 0 },
     "raci_single_a": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
     "raci_qc": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
     "dri_per_step": { "status": "PRESENTE|PARCIAL|AUSENTE", "evidence": "...", "suggestion": "..." },
@@ -193,13 +205,26 @@ async function extractText(buffer, mimetype, originalname) {
 
 function calculateScore(criteriaResult) {
   let score = 0;
+  let denominator = 0;
+
   for (const c of CRITERIA) {
-    const status = criteriaResult[c.key]?.status || 'AUSENTE';
-    if (status === 'PRESENTE') score += 1;
-    else if (status === 'PARCIAL') score += 0.5;
-    else if (status === 'AUSENTE' && c.softFail) score += 0.5; // softFail: cuenta como PARCIAL
+    const cr     = criteriaResult[c.key] || {};
+    const status = cr.status || 'AUSENTE';
+
+    // NO_APLICA → excluir del score completamente
+    if (status === 'NO_APLICA') continue;
+
+    // Peso: doble para estratégico (weight=2), normal para el resto
+    const weight = (c.key === 'vision_connection' && cr.weight === 2) ? 2 : 1;
+    denominator += weight;
+
+    if      (status === 'PRESENTE')                    score += 1 * weight;
+    else if (status === 'PARCIAL')                     score += 0.5 * weight;
+    else if (status === 'AUSENTE' && c.softFail)       score += 0.5 * weight;
   }
-  return Math.round((score / 12) * 100);
+
+  if (denominator === 0) return 0;
+  return Math.round((score / denominator) * 100);
 }
 
 // Aplica softFail: si el criterio es softFail y está AUSENTE, lo muestra como PARCIAL
@@ -207,7 +232,10 @@ function applysoftFail(criteriaResult) {
   const adjusted = {};
   for (const c of CRITERIA) {
     const original = criteriaResult[c.key] || { status: 'AUSENTE', evidence: '', suggestion: '' };
-    if (c.softFail && original.status === 'AUSENTE') {
+    // NO_APLICA nunca se toca
+    if (original.status === 'NO_APLICA') {
+      adjusted[c.key] = original;
+    } else if (c.softFail && original.status === 'AUSENTE') {
       adjusted[c.key] = {
         ...original,
         status: 'PARCIAL',

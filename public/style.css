@@ -401,6 +401,12 @@ main {
   border-color: #fca5a5;
 }
 
+.criterion-NO_APLICA {
+  background: #F8F9FA;
+  border-color: #CBD5E0;
+  opacity: .85;
+}
+
 .criterion-header {
   display: flex;
   align-items: flex-start;
@@ -415,9 +421,10 @@ main {
   margin-top: 3px;
 }
 
-.light-PRESENTE { background: var(--green); box-shadow: 0 0 6px #22c55e88; }
-.light-PARCIAL  { background: var(--yellow); box-shadow: 0 0 6px #f59e0b88; }
-.light-AUSENTE  { background: var(--red);   box-shadow: 0 0 6px #ef444488; }
+.light-PRESENTE  { background: var(--green);  box-shadow: 0 0 6px #22c55e88; }
+.light-PARCIAL   { background: var(--yellow); box-shadow: 0 0 6px #f59e0b88; }
+.light-AUSENTE   { background: var(--red);    box-shadow: 0 0 6px #ef444488; }
+.light-NO_APLICA { background: #A0AEC0; }
 
 .criterion-info { flex: 1; min-width: 0; }
 
@@ -443,9 +450,10 @@ main {
   letter-spacing: .5px;
 }
 
-.status-PRESENTE { color: #16a34a; }
-.status-PARCIAL  { color: #b45309; }
-.status-AUSENTE  { color: #dc2626; }
+.status-PRESENTE  { color: #16a34a; }
+.status-PARCIAL   { color: #b45309; }
+.status-AUSENTE   { color: #dc2626; }
+.status-NO_APLICA { color: #718096; font-style: italic; }
 
 .criterion-norm {
   font-size: 10px;
