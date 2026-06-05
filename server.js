@@ -256,36 +256,98 @@ async function extractTextFromGoogleDoc(url) {
   return text;
 }
 
-// Convierte HTML a texto plano preservando hipervínculos como [LINK: texto → url]
+// Convierte HTML a texto enriquecido preservando estructura, links e imágenes
 function htmlToEnrichedText(html) {
-  // Reemplazar <a href="url">texto</a> → "texto [LINK: url]"
-  let text = html.replace(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, content) => {
+  let text = html;
+
+  // 1. Eliminar <head>, <style>, <script> completos
+  text = text
+    .replace(/<head[\s\S]*?<\/head>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '');
+
+  // 2. Imágenes → [IMAGEN: alt] para que Claude sepa que hay contenido visual
+  text = text.replace(/<img[^>]*alt=["']([^"']+)["'][^>]*\/?>/gi, '[IMAGEN: $1]');
+  text = text.replace(/<img[^>]*\/?>/gi, '[IMAGEN]');
+
+  // 3. Encabezados → marcadores de sección legibles
+  text = text
+    .replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (_, c) => `\n\n## ${c.replace(/<[^>]+>/g, '').trim()}\n`)
+    .replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (_, c) => `\n\n### ${c.replace(/<[^>]+>/g, '').trim()}\n`)
+    .replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, (_, c) => `\n\n#### ${c.replace(/<[^>]+>/g, '').trim()}\n`)
+    .replace(/<h[4-6][^>]*>([\s\S]*?)<\/h[4-6]>/gi, (_, c) => `\n${c.replace(/<[^>]+>/g, '').trim()}\n`);
+
+  // 4. Links → "texto [LINK: url]" decodificando redirects de Google
+  text = text.replace(/<a\s+[^>]*href=["']([^"'#][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, content) => {
     const linkText = content.replace(/<[^>]+>/g, '').trim();
-    // Filtrar links internos de Google (anclas, estilos, etc.)
-    if (href.startsWith('#') || href.includes('google.com/url?q=')) {
-      // Decodificar URL de redirección de Google
+    if (!linkText) return '';
+    // Decodificar URL de redirección de Google (google.com/url?q=...)
+    if (href.includes('google.com/url') || href.includes('google.com/url?q=')) {
       const match = href.match(/[?&]q=([^&]+)/);
       const realUrl = match ? decodeURIComponent(match[1]) : href;
-      return realUrl.startsWith('#') ? linkText : `${linkText} [LINK: ${realUrl}]`;
+      return `${linkText} [LINK: ${realUrl}]`;
     }
     return href.startsWith('http') ? `${linkText} [LINK: ${href}]` : linkText;
   });
+  // Links ancla restantes — solo el texto
+  text = text.replace(/<a[^>]*>([\s\S]*?)<\/a>/gi, (_, c) => c.replace(/<[^>]+>/g, '').trim());
 
-  // Limpiar el resto de tags HTML
+  // 5. Tablas → formato legible con | separadores
+  text = text
+    .replace(/<table[^>]*>/gi, '\n[TABLA]\n')
+    .replace(/<\/table>/gi, '[/TABLA]\n')
+    .replace(/<thead[^>]*>|<\/thead>/gi, '')
+    .replace(/<tbody[^>]*>|<\/tbody>/gi, '')
+    .replace(/<tr[^>]*>/gi, '')
+    .replace(/<\/tr>/gi, ' |\n')
+    .replace(/<th[^>]*>/gi, '| ')
+    .replace(/<\/th>/gi, ' ')
+    .replace(/<td[^>]*>/gi, '| ')
+    .replace(/<\/td>/gi, ' ');
+
+  // 6. Listas → con marcadores
+  text = text
+    .replace(/<ul[^>]*>/gi, '\n')
+    .replace(/<\/ul>/gi, '\n')
+    .replace(/<ol[^>]*>/gi, '\n')
+    .replace(/<\/ol>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/li>/gi, '\n');
+
+  // 7. Saltos de línea y párrafos
   text = text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<\/tr>/gi, '\n')
-    .replace(/<\/td>/gi, '\t')
-    .replace(/<\/th>/gi, '\t')
-    .replace(/<[^>]+>/g, '')
+    .replace(/<p[^>]*>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<hr[^>]*\/?>/gi, '\n---\n');
+
+  // 8. Texto en negrita/cursiva → preservar contenido
+  text = text
+    .replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '$1')
+    .replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '$1')
+    .replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '$1')
+    .replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '$1');
+
+  // 9. Eliminar todos los tags restantes
+  text = text.replace(/<[^>]+>/g, '');
+
+  // 10. Decodificar entidades HTML
+  text = text
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#\d+;/g, ' ');
+
+  // 11. Limpiar espacios y líneas excesivas
+  text = text
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
