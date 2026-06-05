@@ -110,21 +110,36 @@ DEFINICIÓN EXACTA DE CADA CRITERIO — úsala para evaluar con precisión:
    AUSENTE: Solo objetivos sin KR, o sin sección de objetivos.
 
 3. vision_connection — Conexión a OKR o Visión CartoData 2035:
-   ANTES DE EVALUAR, determina el tipo de Playbook leyendo su contenido:
-   - TIPO A — Activo físico / insumo / equipo operativo: el documento gestiona un objeto físico, equipo, herramienta, lente, sensor, vehículo, consumible u otro activo tangible. Ejemplos: manejo de lentes 3D, mantenimiento de drones, control de inventario de equipo.
-   - TIPO B — Proceso de área / entrega de servicio / proceso transversal: el documento gestiona cómo un equipo o área ejecuta su trabajo, entrega un servicio interno o externo, o estandariza un proceso repetible. Ejemplos: generación de Playbooks, procesamiento GNSS, clasificación catastral, atención a clientes.
-   - TIPO C — Estratégico / gobernanza: el documento define lineamientos, políticas, visión, estructura organizacional o metodología de alto nivel. Ejemplos: PB-META-001, plan estratégico, política de calidad.
+   PASO 1 — Clasifica el Playbook usando esta pregunta clave:
+   ¿El documento principal objeto es un OBJETO FÍSICO o EQUIPO TANGIBLE (algo que se puede tocar, usar, guardar, consumir, mantener o inventariar)?
 
-   Si TIPO A → status: "NO_APLICA", evidence: "Playbook de activo físico/equipo — criterio de conexión estratégica no aplica a este tipo de documento", suggestion: ""
-   Si TIPO B → evaluar normalmente: PRESENTE/PARCIAL/AUSENTE según conexión a OKR o Visión 2035, weight: 1
-   Si TIPO C → evaluar con peso doble: PRESENTE/PARCIAL/AUSENTE según conexión estratégica, weight: 2
+   Si SÍ → TIPO A. Marca inmediatamente como NO_APLICA. No evalúes más este criterio.
+
+   Ejemplos TIPO A (marcar NO_APLICA sin dudar):
+   - Lentes, anteojos, gafas, visores 3D o estereoscópicos
+   - Drones, aeronaves, cámaras, sensores, GPS, equipos de medición
+   - Vehículos, herramientas, maquinaria, consumibles
+   - Inventarios de equipos, control de activos físicos
+   - Kits, maletines, insumos, materiales de campo
+
+   Si NO → continuar al PASO 2:
+   ¿El documento gestiona un PROCESO DE TRABAJO de un área o equipo?
+   Si SÍ → TIPO B (evaluar normalmente, weight: 1)
+   ¿El documento define LINEAMIENTOS, POLÍTICAS o METODOLOGÍA organizacional?
+   Si SÍ → TIPO C (evaluar con peso doble, weight: 2)
+
+   REGLA CRÍTICA: Si el título o contenido menciona equipo físico, lentes, drones, sensores, activos, inventario o equipo tangible → TIPO A → NO_APLICA. La ausencia de OKR en estos documentos es CORRECTA y esperada, no es un fallo.
+
+   Si TIPO A → status: "NO_APLICA", evidence: "Playbook de gestión de activo físico/equipo — la conexión a OKR estratégicos no aplica a documentos operativos de equipos tangibles", suggestion: "", playbook_type: "A", weight: 0
+   Si TIPO B → evaluar: PRESENTE/PARCIAL/AUSENTE, playbook_type: "B", weight: 1
+   Si TIPO C → evaluar con peso doble: PRESENTE/PARCIAL/AUSENTE, playbook_type: "C", weight: 2
 
    Para TIPO B y C:
    PRESENTE: El documento menciona explícitamente su alineación con algún OKR del área/empresa o con la Visión CartoData 2035.
    PARCIAL: Hay mención vaga de "alineación estratégica" sin OKR o visión específica.
    AUSENTE: No hay ninguna referencia a objetivos organizacionales superiores.
 
-   En el JSON de vision_connection incluir además: "playbook_type": "A|B|C", "weight": 0|1|2
+   En el JSON de vision_connection incluir: "playbook_type": "A|B|C", "weight": 0|1|2
 
 4. raci_single_a — RACI con solo un A por tarea:
    PRESENTE: Existe una matriz RACI (o tabla de responsabilidades) donde cada tarea/fila tiene exactamente un "A" (Accountable/Responsable final). La tabla puede llamarse RACI, matriz de roles, tabla de responsabilidades, etc.
