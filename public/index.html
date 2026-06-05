@@ -27,21 +27,43 @@
   <main>
     <!-- Upload Section -->
     <section id="upload-section" class="card">
-      <h2>Subir Playbook</h2>
-      <p class="subtitle">Soporta archivos <strong>PDF</strong> y <strong>DOCX</strong> — máx. 20 MB</p>
+      <h2>Evaluar Playbook</h2>
 
-      <div id="drop-zone" class="drop-zone">
-        <div class="drop-icon">
-          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-            <path d="M24 4 L24 32" stroke="#4A7EC0" stroke-width="3" stroke-linecap="round"/>
-            <path d="M14 22 L24 32 L34 22" stroke="#4A7EC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M8 36 L8 42 L40 42 L40 36" stroke="#4A7EC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+      <!-- Tabs -->
+      <div class="input-tabs">
+        <button class="input-tab active" data-tab="file">📄 Subir archivo</button>
+        <button class="input-tab" data-tab="url">🔗 Enlace Google Docs</button>
+      </div>
+
+      <!-- Tab: Archivo -->
+      <div id="tab-file">
+        <p class="subtitle">Soporta archivos <strong>PDF</strong> y <strong>DOCX</strong> — máx. 20 MB</p>
+        <div id="drop-zone" class="drop-zone">
+          <div class="drop-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <path d="M24 4 L24 32" stroke="#4A7EC0" stroke-width="3" stroke-linecap="round"/>
+              <path d="M14 22 L24 32 L34 22" stroke="#4A7EC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M8 36 L8 42 L40 42 L40 36" stroke="#4A7EC0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <p>Arrastra tu archivo aquí o</p>
+          <label for="file-input" class="btn btn-primary">Seleccionar archivo</label>
+          <input type="file" id="file-input" accept=".pdf,.docx" hidden />
+          <p id="file-name" class="file-name"></p>
         </div>
-        <p>Arrastra tu archivo aquí o</p>
-        <label for="file-input" class="btn btn-primary">Seleccionar archivo</label>
-        <input type="file" id="file-input" accept=".pdf,.docx" hidden />
-        <p id="file-name" class="file-name"></p>
+      </div>
+
+      <!-- Tab: Google Docs URL -->
+      <div id="tab-url" class="hidden">
+        <p class="subtitle">El documento debe tener acceso <strong>"Cualquier persona con el enlace puede ver"</strong></p>
+        <div class="url-input-area">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="flex-shrink:0">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="#4A7EC0" stroke-width="2" stroke-linecap="round"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="#4A7EC0" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <input type="url" id="gdocs-url" placeholder="https://docs.google.com/document/d/..." />
+        </div>
+        <p class="url-hint">💡 En Google Docs: <strong>Compartir → Cualquier persona con el enlace → Lector</strong></p>
       </div>
 
       <button id="evaluate-btn" class="btn btn-evaluate" disabled>

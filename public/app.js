@@ -1,6 +1,7 @@
 /* ── State ── */
 let selectedFile = null;
-let lastResult = null;
+let lastResult   = null;
+let activeTab    = 'file'; // 'file' | 'url'
 
 /* ── DOM ── */
 const fileInput      = document.getElementById('file-input');
@@ -14,6 +15,23 @@ const exportBtn      = document.getElementById('export-btn');
 const newEvalBtn     = document.getElementById('new-eval-btn');
 const stepAnalyze    = document.getElementById('step-analyze');
 const stepReport     = document.getElementById('step-report');
+const gdocsUrl       = document.getElementById('gdocs-url');
+
+/* ── Tabs ── */
+document.querySelectorAll('.input-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    activeTab = tab.dataset.tab;
+    document.querySelectorAll('.input-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-file').classList.toggle('hidden', activeTab !== 'file');
+    document.getElementById('tab-url').classList.toggle('hidden',  activeTab !== 'url');
+    evaluateBtn.disabled = activeTab === 'file' ? !selectedFile : !gdocsUrl.value.trim();
+  });
+});
+
+gdocsUrl.addEventListener('input', () => {
+  evaluateBtn.disabled = !gdocsUrl.value.trim();
+});
 
 /* ── File selection ── */
 fileInput.addEventListener('change', () => {
@@ -63,13 +81,13 @@ function formatBytes(bytes) {
 evaluateBtn.addEventListener('click', runEvaluation);
 
 async function runEvaluation() {
-  if (!selectedFile) return;
+  if (activeTab === 'file' && !selectedFile) return;
+  if (activeTab === 'url'  && !gdocsUrl.value.trim()) return;
 
   uploadSection.classList.add('hidden');
   loadingSection.classList.remove('hidden');
   resultsSection.classList.add('hidden');
 
-  // Animate loading steps
   const t1 = setTimeout(() => stepAnalyze.classList.add('active'), 1500);
   const t2 = setTimeout(() => {
     stepAnalyze.classList.remove('active');
@@ -77,11 +95,19 @@ async function runEvaluation() {
     stepReport.classList.add('active');
   }, 4000);
 
-  const formData = new FormData();
-  formData.append('file', selectedFile);
-
   try {
-    const res = await fetch('/api/evaluate', { method: 'POST', body: formData });
+    let res;
+    if (activeTab === 'url') {
+      res = await fetch('/api/evaluate-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: gdocsUrl.value.trim() })
+      });
+    } else {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      res = await fetch('/api/evaluate', { method: 'POST', body: formData });
+    }
     clearTimeout(t1); clearTimeout(t2);
 
     if (!res.ok) {
@@ -204,10 +230,16 @@ function truncate(str, max) {
 /* ── New Evaluation ── */
 newEvalBtn.addEventListener('click', () => {
   selectedFile = null;
-  lastResult = null;
+  lastResult   = null;
+  activeTab    = 'file';
   fileInput.value = '';
   fileNameEl.textContent = '';
+  gdocsUrl.value = '';
   evaluateBtn.disabled = true;
+  // Reset tabs
+  document.querySelectorAll('.input-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  document.getElementById('tab-file').classList.remove('hidden');
+  document.getElementById('tab-url').classList.add('hidden');
 
   // Reset loading steps
   stepAnalyze.classList.remove('active', 'done');
